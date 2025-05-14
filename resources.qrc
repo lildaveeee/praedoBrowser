@@ -1,0 +1,6 @@
+<RCC>
+    <qresource prefix="/">
+        <file>resources/pattern.jpg</file>
+    </qresource>
+</RCC>
+
