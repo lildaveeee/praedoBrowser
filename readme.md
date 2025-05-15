@@ -1,9 +1,9 @@
-> Installation
-Run installer.sh which will install dependencies and add executable to applications shortcut
-> Run Program
-./praedoBrowser or search for it using rofi or equivalent (should appear)
-> !Bangs - similar to duckduckgo's bangs but implemented into the browser itself simply type !ebay {search} to browse ebay immediately
-    "g",     "https://www.google.com/search?q={search}"
+**Installation
+**Run installer.sh which will install dependencies and add executable to applications shortcut
+**Run Program
+**./praedoBrowser or search for it using rofi or equivalent (should appear)
+**!Bangs - similar to duckduckgo's bangs but implemented into the browser itself simply type !ebay {search} to browse ebay immediately
+**    "g",     "https://www.google.com/search?q={search}"
     "ddg",   "https://duckduckgo.com/?q={search}"
     "wiki",  "https://en.wikipedia.org/wiki/Special:Search?search={search}"
     "reddit","https://www.reddit.com/search/?q={search}"
