@@ -1,0 +1,1229 @@
+#include "mainwindow.h"
+#include "settings.h"
+#include "media.h"
+
+#include <QFileSystemWatcher>
+#include <QShortcut>
+#include <QToolBar>
+#include <QAction>
+#include <QIcon>
+#include <QLabel>
+#include <QLineEdit>
+#include <QHBoxLayout>
+#include <QVBoxLayout>
+#include <QListWidget>
+#include <QStackedWidget>
+#include <QPushButton>
+#include <QSplitter>
+#include <QWebEngineView>
+#include <QUrl>
+#include <QListWidgetItem>
+#include <QApplication>
+#include <QPalette>
+#include <QDebug>
+#include <QPainter>
+#include <QPixmap>
+#include <QStyle>
+#include <QScreen>
+#include <QGuiApplication>
+#include <QWebEngineSettings>
+#include <QWebEngineProfile>
+#include <QWebEngineFullScreenRequest>
+#include <QSettings>
+#include <QShortcut>
+#include <QMouseEvent>
+#include <QPropertyAnimation>
+#include <QTimer>
+#include <QStandardPaths>
+#include <QMenu>
+#include <QDir>
+
+static QIcon createMonochromeIcon(const QIcon &srcIcon, const QSize &size, const QColor &color) {
+    QPixmap pixmap = srcIcon.pixmap(size);
+    QPixmap monochromePixmap(size);
+    monochromePixmap.fill(Qt::transparent);
+    QPainter painter(&monochromePixmap);
+    painter.setCompositionMode(QPainter::CompositionMode_Source);
+    painter.drawPixmap(0, 0, pixmap);
+    painter.setCompositionMode(QPainter::CompositionMode_SourceIn);
+    painter.fillRect(monochromePixmap.rect(), color);
+    painter.end();
+    return QIcon(monochromePixmap);
+}
+
+static QIcon createSymbolIcon(const QSize &size, const QColor &color, const QString &symbol) {
+    QPixmap pixmap(size);
+    pixmap.fill(Qt::transparent);
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing);
+    QFont font = painter.font();
+    font.setBold(true);
+    int pixelSize = static_cast<int>(qMin(size.width(), size.height()) * 0.8);
+    font.setPixelSize(pixelSize);
+    painter.setFont(font);
+    painter.setPen(color);
+    painter.drawText(pixmap.rect(), Qt::AlignCenter, symbol);
+    return QIcon(pixmap);
+}
+
+static QIcon createHamburgerIcon(const QSize &size, const QColor &color) {
+    QPixmap pixmap(size);
+    pixmap.fill(Qt::transparent);
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing);
+    QPen pen(color);
+    pen.setWidth(2);
+    pen.setCapStyle(Qt::RoundCap);
+    painter.setPen(pen);
+    int w = size.width();
+    int h = size.height();
+    int margin = qMax(2, size.width() / 8);
+    int gap = (h - 2 * margin) / 2;
+    int y1 = margin;
+    int y2 = margin + gap;
+    int y3 = h - margin;
+    painter.drawLine(QPoint(margin, y1), QPoint(w - margin, y1));
+    painter.drawLine(QPoint(margin, y2), QPoint(w - margin, y2));
+    painter.drawLine(QPoint(margin, y3), QPoint(w - margin, y3));
+    return QIcon(pixmap);
+}
+
+static QIcon createPlusIcon(const QSize &size, const QColor &color) {
+    QPixmap pixmap(size);
+    pixmap.fill(Qt::transparent);
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing);
+    QPen pen(color);
+    pen.setWidth(2);
+    pen.setCapStyle(Qt::RoundCap);
+    painter.setPen(pen);
+    int w = size.width();
+    int h = size.height();
+    int margin = qMax(2, size.width() / 4);
+    painter.drawLine(QPoint(margin, h / 2), QPoint(w - margin, h / 2));
+    painter.drawLine(QPoint(w / 2, margin), QPoint(w / 2, h - margin));
+    return QIcon(pixmap);
+}
+
+static QIcon createHouseIcon(const QSize &size, const QColor &color) {
+    QPixmap pixmap(size);
+    pixmap.fill(Qt::transparent);
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing);
+    QPen pen(color);
+    pen.setWidth(2);
+    pen.setCapStyle(Qt::RoundCap);
+    painter.setPen(pen);
+    painter.setBrush(Qt::NoBrush);
+    int w = size.width();
+    int h = size.height();
+    int margin = qMax(2, size.width() / 8);
+    QPoint roofPeak(w / 2, margin);
+    QPoint roofLeft(margin, h / 2);
+    QPoint roofRight(w - margin, h / 2);
+    QPolygon roof;
+    roof << roofPeak << roofRight << roofLeft;
+    painter.drawPolygon(roof);
+    int inset = w / 6;
+    QRect baseRect(margin + inset, h / 2, w - 2 * (margin + inset), h / 2 - margin);
+    painter.drawRect(baseRect);
+    return QIcon(pixmap);
+}
+
+QMap<QString, QString> MainWindow::createBangMap() {
+    QMap<QString, QString> searchMap;
+    searchMap.insert("g",     "https://www.google.com/search?q={search}");
+    searchMap.insert("ddg",   "https://duckduckgo.com/?q={search}");
+    searchMap.insert("wiki",  "https://en.wikipedia.org/wiki/Special:Search?search={search}");
+    searchMap.insert("reddit","https://www.reddit.com/search/?q={search}");
+    searchMap.insert("yt",    "https://www.youtube.com/results?search_query={search}");
+    searchMap.insert("media2","https://hydrahd.sh/index.php?menu=search&query={search}");
+    searchMap.insert("ebay",  "https://www.ebay.com/sch/i.html?_nkw={search}");
+    searchMap.insert("steam", "https://store.steampowered.com/search/?term={search}");
+    searchMap.insert("gh",    "https://github.com/search?q={search}");
+    searchMap.insert("tw",    "https://twitter.com/search?q={search}");
+    searchMap.insert("ig",    "https://www.instagram.com/explore/tags/{search}");
+    searchMap.insert("fb",    "https://www.facebook.com/search/top/?q={search}");
+    searchMap.insert("a",     "https://www.amazon.com/s?k={search}");
+    searchMap.insert("trans", "https://translate.google.com/?sl=auto&tl=en&text={search}&op=translate");
+    searchMap.insert("bing",  "https://www.bing.com/search?q={search}");
+    searchMap.insert("imdb",  "https://www.imdb.com/find?q={search}");
+    searchMap.insert("stack", "https://stackoverflow.com/search?q={search}");
+    searchMap.insert("news",  "https://news.google.com/search?q={search}");
+    searchMap.insert("maps",  "https://www.google.com/maps/search/{search}");
+    searchMap.insert("lyrics","https://genius.com/search?q={search}");
+    searchMap.insert("recipe","https://www.allrecipes.com/search/results/?wt={search}");
+    searchMap.insert("jobs",  "https://www.indeed.com/jobs?q={search}");
+    searchMap.insert("weather", "https://www.weather.com/weather/today/l/{search}");
+    searchMap.insert("currency", "https://www.xe.com/currencyconverter/convert/?Amount=1&From={search}");
+    searchMap.insert("stocks", "https://www.marketwatch.com/investing/stock/{search}");
+    searchMap.insert("symbols", "https://unicode-table.com/en/search/?q={search}");
+    searchMap.insert("fonts", "https://www.dafont.com/search.php?q={search}");
+    searchMap.insert("books", "https://www.goodreads.com/search?q={search}");
+    searchMap.insert("scholar", "https://scholar.google.com/scholar?q={search}");
+    searchMap.insert("pubmed", "https://pubmed.ncbi.nlm.nih.gov/?term={search}");
+    searchMap.insert("recipes2", "https://www.foodnetwork.com/search/{search}-");
+    searchMap.insert("dictionary", "https://www.merriam-webster.com/dictionary/{search}");
+    searchMap.insert("thesaurus", "https://www.thesaurus.com/browse/{search}");
+    searchMap.insert("code", "https://github.com/search?q={search}&type=code");
+    searchMap.insert("anime", "https://myanimelist.net/search/all?q={search}");
+    searchMap.insert("movies", "https://letterboxd.com/search/{search}");
+    searchMap.insert("games", "https://www.metacritic.com/search/game/{search}/results");
+    searchMap.insert("cars", "https://www.autotrader.com/cars-for-sale/{search}");
+    searchMap.insert("flight", "https://www.google.com/search?q=flight+{search}");
+    searchMap.insert("train", "https://www.thetrainline.com/search?q={search}");
+    searchMap.insert("sports", "https://www.espn.com/search/results?q={search}");
+    searchMap.insert("history", "https://history.com/search?q={search}");
+    return searchMap;
+}
+
+MainWindow::MainWindow(QWidget *parent)
+    : QMainWindow(parent),
+    sidebarVisible(true),
+    sidebarShowLock(false)
+{
+
+    qputenv("QTWEBENGINE_CHROMIUM_FLAGS",
+            "--disable-component-update --enable-widevine-cdm "
+            "--disable-gpu --disable-software-rasterizer");
+    QWebEngineProfile *profile = QWebEngineProfile::defaultProfile();
+    QString storagePath = QStandardPaths::writableLocation(
+                              QStandardPaths::AppDataLocation)
+                          + "/PraedoBrowserProfile";
+    profile->setCachePath(storagePath + "/cache");
+    profile->setPersistentStoragePath(storagePath + "/persistentStorage");
+
+    setWindowTitle("Praedo");
+
+    applyModernBlueTheme();
+    createNavigationToolbar();
+    createCentralWidgets();
+
+    settingsReloadTimer = new QTimer(this);
+    settingsReloadTimer->setSingleShot(true);
+    settingsReloadTimer->setInterval(200);
+    connect(settingsReloadTimer, &QTimer::timeout, this, [this]() {
+        QSettings settings("PraedoBrowser", "PraedoBrowser");
+        settings.sync();
+
+        qDebug() << "Theme reloaded →"
+                 << "tabListColor =" << settings.value("tabListColor").toString()
+                 << "highlightColor =" << settings.value("highlightColor").toString()
+                 << "topBarColor =" << settings.value("topBarColor").toString();
+
+        applyModernBlueTheme();
+        updateSidebarColor();
+        updateNavigationIcons();
+
+        // re-add watcher if file was replaced
+        QString path = settings.fileName();
+        if (!settingsWatcher->files().contains(path))
+            settingsWatcher->addPath(path);
+    });
+
+    settingsWatcher = new QFileSystemWatcher(this);
+    QString settingsFile = QSettings("PraedoBrowser", "PraedoBrowser").fileName();
+    settingsWatcher->addPath(settingsFile);
+    connect(settingsWatcher, &QFileSystemWatcher::fileChanged,
+            this, &MainWindow::reloadThemeSettings);
+
+    this->setMouseTracking(true);
+    if (centralWidget())
+        centralWidget()->setMouseTracking(true);
+    this->installEventFilter(this);
+
+    updateSidebarColor();
+    sidebarHideTimer = new QTimer(this);
+    sidebarHideTimer->setSingleShot(true);
+    sidebarHideTimer->setInterval(1000);
+    connect(sidebarHideTimer, &QTimer::timeout, this, &MainWindow::hideSidebar);
+
+    addNewTab();
+    QShortcut *reloadShortcut = new QShortcut(QKeySequence(Qt::Key_F5), this);
+    connect(reloadShortcut, &QShortcut::activated, this, &MainWindow::reloadPage);
+    QSettings settings("PraedoBrowser", "PraedoBrowser");
+    QString newTabSC = settings.value("newTabShortcut", "Ctrl+N").toString();
+    QShortcut *newTabShortcut = new QShortcut(QKeySequence(newTabSC), this);
+    connect(newTabShortcut, &QShortcut::activated, this, &MainWindow::addNewTab);
+    QString searchBarSC = settings.value("searchbarShortcut", "Ctrl+S").toString();
+    QShortcut *searchbarShortcut = new QShortcut(QKeySequence(searchBarSC), this);
+    connect(searchbarShortcut, &QShortcut::activated, this, [this](){
+        addressBar->setFocus();
+    });
+
+    QString closeTabKey = settings.value("closeTabShortcut", "Ctrl+Q").toString();
+    QShortcut *closeTabShortcut = new QShortcut(QKeySequence(closeTabKey), this);
+    connect(closeTabShortcut, &QShortcut::activated, this, [this]() {
+        int current = tabListWidget->currentRow();
+        if (current >= 0) {
+            delete tabListWidget->takeItem(current);
+            QWidget *tab = webStack->widget(current);
+            webStack->removeWidget(tab);
+            delete tab;
+        }
+    });
+
+    QString toggleKey = settings.value("toggleTopBarShortcut",
+                                       "Ctrl+T").toString();
+    QShortcut *toggleTopBarSc = new QShortcut(QKeySequence(toggleKey), this);
+    connect(toggleTopBarSc, &QShortcut::activated,
+            this, &MainWindow::toggleTopBar);
+
+    // ── Also rebind when user updates settings ───────────────────────────
+    settingsDialog = new SettingsDialog(this);
+
+    // now your central-search code
+    QSettings ss("PraedoBrowser","PraedoBrowser");
+    QString seq = ss.value("toggleCentralSearchShortcut","Ctrl+Space").toString();
+    centralSearchShortcut = new QShortcut(QKeySequence(seq), this);
+    connect(centralSearchShortcut,
+            &QShortcut::activated,
+            this,
+            &MainWindow::toggleCentralSearch);
+
+    // rebind when user clicks “OK” in settings
+    connect(settingsDialog,
+            &SettingsDialog::settingsUpdated,
+            this,
+            [this]() {
+                QSettings s2("PraedoBrowser","PraedoBrowser");
+                QString updated = s2.value("toggleCentralSearchShortcut",
+                                            "Ctrl+Space").toString();
+                centralSearchShortcut->setKey(QKeySequence(updated));
+            });
+    QString cycleTabKey = settings.value("cycleTabShortcut", "Ctrl+Tab").toString();
+    QShortcut *cycleTabShortcut = new QShortcut(QKeySequence(cycleTabKey), this);
+    connect(cycleTabShortcut, &QShortcut::activated, this, [this]() {
+        int current = tabListWidget->currentRow();
+        int count = tabListWidget->count();
+        if (count > 0) {
+            int next = (current + 1) % count;
+            tabListWidget->setCurrentRow(next);
+            webStack->setCurrentIndex(next);
+        }
+    });
+
+    QVariantList customBindings = settings.value("customShortcuts").toList();
+    for (const QVariant &v : customBindings) {
+        QVariantMap m = v.toMap();
+        QString urlStr      = m.value("url").toString().trimmed();
+        QString keySequence = m.value("sequence").toString().trimmed();
+        if (urlStr.isEmpty() || keySequence.isEmpty())
+            continue;
+
+        QShortcut *sc = new QShortcut(QKeySequence(keySequence), this);
+        connect(sc, &QShortcut::activated, this, [this, urlStr]() {
+            QUrl target(urlStr);
+            QWebEngineView *view = qobject_cast<QWebEngineView*>(webStack->currentWidget());
+            if (view) {
+                view->setUrl(target);
+            } else {
+                QWebEngineView *newView = createWebView(target);
+                int idx = webStack->addWidget(newView);
+                QString title = QUrl(urlStr).host();
+                QListWidgetItem *item = new QListWidgetItem(title);
+                tabListWidget->addItem(item);
+                tabListWidget->setCurrentRow(idx);
+                webStack->setCurrentIndex(idx);
+            }
+        });
+    }
+}
+MainWindow::~MainWindow()
+{
+}
+
+bool MainWindow::eventFilter(QObject *obj, QEvent *event) {
+    if (obj == tabListWidget && event->type() == QEvent::ContextMenu) {
+        QContextMenuEvent *contextEvent = static_cast<QContextMenuEvent*>(event);
+        QListWidgetItem *item = tabListWidget->itemAt(contextEvent->pos());
+        if (item) {
+            QSettings settings("PraedoBrowser", "PraedoBrowser");
+            QString topBarColor = settings.value("topBarColor", "#2A2118").toString();
+            QString accent1Color = settings.value("accent1Color", "#D4B398").toString();
+            QMenu menu(tabListWidget);
+            menu.setWindowFlags(menu.windowFlags() | Qt::FramelessWindowHint);
+            menu.setAttribute(Qt::WA_TranslucentBackground);
+            menu.setStyleSheet(QString(
+                                   "QMenu { background-color: %1; border: 2px solid %2; border-radius: 10px; padding: 5px; }"
+                                   "QMenu::item { padding: 4px 20px; }"
+                                   "QMenu::item:selected { background-color: %2; }"
+                                   ).arg(topBarColor, accent1Color));
+
+            QAction *closeTabAction = menu.addAction("Close Tab");
+            QAction *muteTabAction  = menu.addAction("Mute/Unmute Tab");
+            QAction *cloneTabAction = menu.addAction("Clone Tab");
+            QAction *selectedAction = menu.exec(tabListWidget->viewport()->mapToGlobal(contextEvent->pos()));
+            int index = tabListWidget->row(item);
+            if (selectedAction) {
+                if (selectedAction == closeTabAction) {
+                    delete tabListWidget->takeItem(index);
+                    QWidget *tab = webStack->widget(index);
+                    webStack->removeWidget(tab);
+                    delete tab;
+                }
+                else if (selectedAction == muteTabAction) {
+                    QWebEngineView *view = qobject_cast<QWebEngineView*>(webStack->widget(index));
+                    if (view) {
+                        bool muted = view->page()->isAudioMuted();
+                        view->page()->setAudioMuted(!muted);
+                    }
+                }
+                else if (selectedAction == cloneTabAction) {
+                    QWebEngineView *currentView = qobject_cast<QWebEngineView*>(webStack->widget(index));
+                    if (currentView) {
+                        QUrl url = currentView->url();
+                        QWebEngineView *newView = createWebView(url);
+                        int newIndex = webStack->addWidget(newView);
+                        QListWidgetItem *newItem = new QListWidgetItem(item->data(Qt::UserRole).toString());
+                        tabListWidget->addItem(newItem);
+                        tabListWidget->setCurrentRow(newIndex);
+                        webStack->setCurrentIndex(newIndex);
+                        addressBar->setText(url.toString());
+                    }
+                }
+            }
+        }
+        return true;
+    }
+
+    if (obj == this && event->type() == QEvent::MouseMove) {
+        QPoint pos = this->mapFromGlobal(QCursor::pos());
+        if (pos.y() < 100) {
+            showBookmarkBar();
+        } else {
+            if (!bookmarkBar->underMouse())
+                hideBookmarkBar();
+        }
+        if (pos.x() <= 5 && !sidebarShowLock) {
+            sidebarShowLock = true;
+            QTimer::singleShot(1000, this, [this]() { sidebarShowLock = false; });
+            if (!sidebarVisible) {
+                sidebarWidget->setMaximumWidth(0);
+                sidebarWidget->show();
+                QPropertyAnimation *animation = new QPropertyAnimation(sidebarWidget, "maximumWidth");
+                animation->setDuration(300);
+                animation->setEasingCurve(QEasingCurve::InOutQuad);
+                animation->setStartValue(sidebarWidget->width());
+                animation->setEndValue(250);
+                connect(animation, &QPropertyAnimation::finished, [this]() {
+                    sidebarVisible = true;
+                });
+                animation->start(QAbstractAnimation::DeleteWhenStopped);
+            }
+            if (sidebarHideTimer && sidebarHideTimer->isActive())
+                sidebarHideTimer->stop();
+        }
+    }
+
+    if (obj == bookmarkBar && event->type() == QEvent::Leave) {
+        hideBookmarkBar();
+    }
+
+    if (obj == sidebarWidget) {
+        if (event->type() == QEvent::Enter) {
+            if (sidebarHideTimer && sidebarHideTimer->isActive())
+                sidebarHideTimer->stop();
+        }
+        else if (event->type() == QEvent::Leave) {
+            sidebarHideTimer->start(1000);
+        }
+        else if (event->type() == QEvent::Resize) {
+            updateTabDisplayMode();
+        }
+    }
+
+    if (obj == tabListWidget && event->type() == QEvent::MouseButtonPress) {
+        QMouseEvent *mouseEvent = static_cast<QMouseEvent*>(event);
+        if (mouseEvent->button() == Qt::MiddleButton) {
+            QListWidgetItem *item = tabListWidget->itemAt(mouseEvent->pos());
+            if (item) {
+                int index = tabListWidget->row(item);
+                delete tabListWidget->takeItem(index);
+                QWidget *tab = webStack->widget(index);
+                webStack->removeWidget(tab);
+                delete tab;
+            }
+            return true;
+        }
+        else if (mouseEvent->button() == Qt::RightButton) {
+            return true;
+        }
+    }
+
+    return QMainWindow::eventFilter(obj, event);
+}
+
+void MainWindow::applyModernBlueTheme() {
+    QSettings settings("PraedoBrowser", "PraedoBrowser");
+    QString backgroundColor        = settings.value("backgroundColor", "#000000").toString();
+    QString topBarColor        = settings.value("topBarColor", "#2A2118").toString();
+    QString accent1Color       = settings.value("accent1Color", "#FFFFFF").toString();
+    QString accent2Color       = settings.value("accent2Color", "#FFFFFF").toString();
+    QString fontColor          = settings.value("fontColor", "#000000").toString();
+    QString tabListColor       = settings.value("tabListColor", "#1E1812").toString();
+    QString alternateBaseColor = settings.value("alternateBaseColor", "#FFFFFF").toString();
+    QString highlightColor = settings.value("highlightColor", "#FDFF00").toString();
+    QString buttonColor       = settings.value("buttonColor", "#424242").toString();
+
+
+    QPalette warmPalette;
+    warmPalette.setColor(QPalette::Window, QColor(alternateBaseColor));
+    warmPalette.setColor(QPalette::WindowText, QColor(fontColor));
+    warmPalette.setColor(QPalette::Base, QColor(tabListColor));
+    warmPalette.setColor(QPalette::AlternateBase, QColor(alternateBaseColor));
+    warmPalette.setColor(QPalette::ToolTipBase, QColor(fontColor));
+    warmPalette.setColor(QPalette::ToolTipText, QColor(fontColor));
+    warmPalette.setColor(QPalette::Text, QColor(fontColor));
+    warmPalette.setColor(QPalette::Button, QColor(topBarColor));
+    warmPalette.setColor(QPalette::ButtonText, QColor(fontColor));
+    warmPalette.setColor(QPalette::BrightText, Qt::red);
+    warmPalette.setColor(QPalette::Link, QColor(fontColor));
+    warmPalette.setColor(QPalette::Highlight, QColor(highlightColor));
+    warmPalette.setColor(QPalette::HighlightedText, Qt::black);
+    qApp->setPalette(warmPalette);
+
+    QString styleSheet = QString(
+                             "QMainWindow { background-color: %1; }"
+                             "QToolBar { background: %2; padding: 10px; border-bottom: 2px solid %3; }"
+                             "QToolBar::separator { background: %4; width: 2px; }"
+                             "QLineEdit { background-color: %5; border: 2px solid %3; padding: 6px; color: %6; border-radius: 6px; }"
+                             "QListWidget { background: white;  border-top: none; border-right: 1px solid %3; border-bottom: none; border-left: none; color: %6; padding: 10px; }"
+                             "QListWidget::item { padding: 8px; }"
+                             "QListWidget::item:selected { background-color: transparent; padding-left: 12px; color: %6; }"
+                             "QPushButton { background-color: %9 ;  border-right: 1px solid %3; border-bottom: none; border-left: none; border-bottom-right-radius: px; color: %6; }"
+                             "QPushButton:hover { background-color: %9; }"
+                             "QStackedWidget { background-color: %7; }"
+                             ).arg(backgroundColor)
+                             .arg(topBarColor)
+                             .arg(accent1Color)
+                             .arg(fontColor)
+                             .arg(alternateBaseColor)
+                             .arg(fontColor)
+                             .arg(tabListColor)
+                             .arg(accent2Color)
+                             .arg(buttonColor);
+
+    qApp->setStyleSheet(styleSheet);
+}
+
+void MainWindow::updateSidebarColor() {
+    QSettings settings("PraedoBrowser", "PraedoBrowser");
+    QString tabListColor = settings.value("tabListColor", "#1E1812").toString();
+    QString fontColor    = settings.value("fontColor", "#D4B398").toString();
+    if (sidebarWidget)
+        sidebarWidget->setStyleSheet(QString("background-color: %1;").arg(tabListColor));
+    if (tabListWidget)
+        tabListWidget->setStyleSheet(QString("background-color: %1; color: %2;")
+                                         .arg(tabListColor)
+                                         .arg(fontColor));
+    qDebug() << "Persisted sidebar background color set to:" << tabListColor;
+}
+void MainWindow::updateNavigationIcons() {
+    QSettings settings("PraedoBrowser", "PraedoBrowser");
+    QColor accent1Color = settings.value("accent1Color", QColor("#D4B398")).value<QColor>();
+    QSize iconSize(18, 18);
+
+    QIcon backIcon      = createSymbolIcon(iconSize, accent1Color, "<");
+    QIcon forwardIcon   = createSymbolIcon(iconSize, accent1Color, ">");
+    QIcon reloadIcon    = createMonochromeIcon(
+        QIcon::fromTheme("view-refresh", style()->standardIcon(QStyle::SP_BrowserReload)),
+        iconSize, accent1Color);
+    QIcon homeIcon      = createHouseIcon(iconSize, accent1Color);
+    QIcon hamburgerIcon = createHamburgerIcon(iconSize, accent1Color);
+    backAction->setIcon(backIcon);
+    forwardAction->setIcon(forwardIcon);
+    reloadAction->setIcon(reloadIcon);
+    homeAction->setIcon(homeIcon);
+    hamburgerAction->setIcon(hamburgerIcon);
+}
+
+void MainWindow::addBookmark() {
+    QWebEngineView *view = qobject_cast<QWebEngineView*>(webStack->currentWidget());
+    if (!view)
+        return;
+
+    QString title = view->title();
+    if (title.isEmpty())
+        title = view->url().toString();
+    QString url = view->url().toString();
+
+    QString logoPath;
+    QIcon pageIcon = view->icon();
+    if (!pageIcon.isNull()) {
+        QPixmap pixmap = pageIcon.pixmap(QSize(32, 32));
+        if (!pixmap.isNull()) {
+            QString cacheDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + "/favicon_cache";
+            QDir dir(cacheDir);
+            if (!dir.exists())
+                dir.mkpath(cacheDir);
+            QString host = view->url().host();
+            QString fileName = cacheDir + "/" + host + ".png";
+
+            if (pixmap.save(fileName, "PNG"))
+                logoPath = fileName;
+        }
+    }
+
+    if (logoPath.isEmpty())
+        logoPath = ":/icons/default_logo.png";
+
+    QSettings settings("PraedoBrowser", "PraedoBrowser");
+    QVariantList bookmarks = settings.value("Bookmarks").toList();
+
+    QVariantMap bookmark;
+    bookmark["title"] = title;
+    bookmark["url"] = url;
+    bookmark["logoPath"] = logoPath;
+
+    bookmarks.append(bookmark);
+
+    settings.setValue("Bookmarks", bookmarks);
+    settings.sync();
+
+    qDebug() << "Bookmark added:" << title << url << "Logo:" << logoPath;
+
+    refreshBookmarkBar();
+    showBookmarkBar();
+}
+
+
+void MainWindow::createNavigationToolbar() {
+    navToolBar = addToolBar("Navigation");
+    QSize iconSize(18, 18);
+    navToolBar->setIconSize(iconSize);
+
+    QSettings settings("PraedoBrowser", "PraedoBrowser");
+    QColor accent1Color = settings.value("accent1Color", QColor("#D4B398")).value<QColor>();
+
+    QIcon backIcon       = createSymbolIcon(iconSize, accent1Color, "<");
+    QIcon forwardIcon    = createSymbolIcon(iconSize, accent1Color, ">");
+    QIcon reloadIcon     = createMonochromeIcon(
+        QIcon::fromTheme("view-refresh", style()->standardIcon(QStyle::SP_BrowserReload)),
+        iconSize,
+        accent1Color);
+    QIcon homeIcon       = createHouseIcon(iconSize, accent1Color);
+    QIcon hamburgerIcon  = createHamburgerIcon(iconSize, accent1Color);
+
+    backAction    = new QAction(backIcon, "", this);
+    forwardAction = new QAction(forwardIcon, "", this);
+    reloadAction  = new QAction(reloadIcon, "", this);
+    homeAction    = new QAction(homeIcon, "", this);
+    hamburgerAction = new QAction(hamburgerIcon, "", this);
+    navToolBar->addAction(hamburgerAction);
+    navToolBar->addSeparator();
+    navToolBar->addAction(backAction);
+    navToolBar->addAction(forwardAction);
+    navToolBar->addAction(reloadAction);
+    navToolBar->addAction(homeAction);
+    QWidget *leftSpacer = new QWidget(this);
+    leftSpacer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    navToolBar->addWidget(leftSpacer);
+    addressBar = new QLineEdit(this);
+    addressBar->setPlaceholderText("Search or enter URL...");
+    addressBar->setClearButtonEnabled(true);
+    int screenWidth = QGuiApplication::primaryScreen()->availableGeometry().width();
+    addressBar->setMinimumWidth(screenWidth * 0.10);
+    addressBar->setMaximumWidth(screenWidth * 0.50);
+    navToolBar->addWidget(addressBar);
+    QWidget *rightSpacer = new QWidget(this);
+    rightSpacer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    navToolBar->addWidget(rightSpacer);
+    QIcon bookmarkIcon = createSymbolIcon(iconSize, accent1Color, "★");
+    bookmarkAction = new QAction(bookmarkIcon, "Bookmark Current Tab", this);
+    navToolBar->addAction(bookmarkAction);
+    connect(bookmarkAction, &QAction::triggered, this, &MainWindow::addBookmark);
+    navToolBar->addSeparator();
+    QIcon blackHamburgerIcon = createMonochromeIcon(hamburgerIcon, iconSize, Qt::white);
+    QAction *settingsAction = new QAction(blackHamburgerIcon, "Settings", this);
+    connect(settingsAction, &QAction::triggered, this, [this]() {
+        SettingsDialog settingsDialog(this);
+        if (settingsDialog.exec() == QDialog::Accepted) {
+            for (int i = 0; i < webStack->count(); ++i) {
+                Media *mediaWidget = qobject_cast<Media*>(webStack->widget(i));
+                if (mediaWidget) {
+                    mediaWidget->updateBackgroundColor();
+                    qDebug() << "Updated background in Media tab at index:" << i;
+                }
+            }
+            updateSidebarColor();
+            applyModernBlueTheme();
+            updateNavigationIcons();
+        }
+    });
+    navToolBar->addAction(settingsAction);
+    connect(addressBar, &QLineEdit::returnPressed, this, &MainWindow::navigateToUrl);
+    connect(backAction, &QAction::triggered, this, &MainWindow::goBack);
+    connect(forwardAction, &QAction::triggered, this, &MainWindow::goForward);
+    connect(reloadAction, &QAction::triggered, this, &MainWindow::reloadPage);
+    connect(homeAction, &QAction::triggered, this, &MainWindow::goHome);
+    connect(hamburgerAction, &QAction::triggered, this, &MainWindow::toggleSidebar);
+
+    bangMap = createBangMap();
+}
+void MainWindow::toggleTopBar()
+{
+    if (!navToolBar) return;
+    if (navToolBar->isVisible())
+        navToolBar->hide();
+    else
+        navToolBar->show();
+}
+void MainWindow::createCentralWidgets() {
+    QWidget *centralWidget = new QWidget(this);
+    setCentralWidget(centralWidget);
+    QVBoxLayout *verticalLayout = new QVBoxLayout(centralWidget);
+    verticalLayout->setContentsMargins(0, 0, 0, 0);
+    verticalLayout->setSpacing(0);
+    createBookmarkBar();
+    verticalLayout->addWidget(bookmarkBar);
+    mainSplitter = new QSplitter(Qt::Horizontal, centralWidget);
+    mainSplitter->setHandleWidth(0);
+    mainSplitter->setStyleSheet("QSplitter::handle { margin: 0px; padding: 0px; }");
+    sidebarWidget = new QWidget(mainSplitter);
+    sidebarWidget->installEventFilter(this);
+    sidebarWidget->setContentsMargins(0, 0, 0, 0);
+    sidebarWidget->setMinimumSize(0, 0);
+    sidebarWidget->setMinimumWidth(0);
+    sidebarWidget->setMaximumWidth(300);
+    QVBoxLayout *sidebarLayout = new QVBoxLayout(sidebarWidget);
+    sidebarLayout->setContentsMargins(0, 0, 0, 0);
+    sidebarLayout->setSpacing(0);
+    tabListWidget = new QListWidget(sidebarWidget);
+    sidebarLayout->addWidget(tabListWidget);
+    tabListWidget->installEventFilter(this);
+    QSize buttonIconSize(32, 32);
+    QIcon plusIcon = createPlusIcon(buttonIconSize, Qt::white);
+    addTabButton = new QPushButton(plusIcon, "", sidebarWidget);
+    addTabButton->setToolTip("Add New Tab");
+    addTabButton->setIconSize(buttonIconSize);
+    sidebarLayout->addWidget(addTabButton);
+    connect(tabListWidget, &QListWidget::currentRowChanged, this, &MainWindow::switchTab);
+    connect(addTabButton, &QPushButton::clicked, this, &MainWindow::addNewTab);
+    webStack = new QStackedWidget(mainSplitter);
+    mainSplitter->setStretchFactor(0, 3);
+    mainSplitter->setStretchFactor(1, 14);
+    mainSplitter->setCollapsible(0, true);
+    verticalLayout->addWidget(mainSplitter);
+}
+
+QWebEngineView* MainWindow::createWebView(const QUrl &url) {
+    QWebEngineView *view = new QWebEngineView;
+    QWebEngineProfile *profile = QWebEngineProfile::defaultProfile();
+    profile->setPersistentCookiesPolicy(QWebEngineProfile::NoPersistentCookies);
+    profile->setHttpCacheType(QWebEngineProfile::MemoryHttpCache);
+    profile->setCachePath(QString());
+    profile->setPersistentStoragePath(QString());
+    view->setUrl(url);
+    view->settings()->setAttribute(QWebEngineSettings::FullScreenSupportEnabled, true);
+    connect(view->page(), &QWebEnginePage::iconChanged, this, [this, view](const QIcon &icon) {
+        int index = webStack->indexOf(view);
+        if (index != -1) {
+            updateTabIcon(index, icon);
+        }
+    });
+
+    connect(view->page(), &QWebEnginePage::fullScreenRequested,
+            this, [this, view](QWebEngineFullScreenRequest request) {
+                qDebug() << "Fullscreen request:" << request.toggleOn();
+                request.accept();
+                toggleFullScreen(view, request.toggleOn());
+            });
+    connect(view, &QWebEngineView::urlChanged, this, [this, view](const QUrl &url) {
+        if (webStack->currentWidget() == view)
+            addressBar->setText(url.toString());
+    });
+    connect(view, &QWebEngineView::titleChanged, this, [this, view](const QString &title) {
+        int index = webStack->indexOf(view);
+        if (index != -1) {
+            updateTabTitle(index, title);
+        }
+    });
+
+    return view;
+}
+
+void MainWindow::toggleFullScreen(QWebEngineView *view, bool enable) {
+    if (enable) {
+        if (navToolBar)
+            navToolBar->hide();
+        if (sidebarWidget)
+            sidebarWidget->hide();
+        this->showFullScreen();
+    } else {
+        if (navToolBar)
+            navToolBar->show();
+        if (sidebarWidget)
+            sidebarWidget->show();
+        this->showNormal();
+    }
+}
+
+void MainWindow::addNewTab() {
+    QSettings settings("PraedoBrowser", "PraedoBrowser");
+    QString defaultUrlString = settings.value("defaultSearchEngine", "https://duckduckgo.com/?kae=b&k1=-1&kaj=m&kak=-1&kao=-1&kap=-1&kaq=-1&kau=-1&kav=1&kax=-1&kbe=0&kbg=-1&kn=-1&kp=-2&kz=-1&kac=-1&kt=g&ko=d&kj=d7d7d7&ku=-1&ka=g&ksn=5&kw=w&km=m&k7=eaeaea&k9=000000&kaa=000000&k18=-1&ks=m&kaf=s&kx=7b7b7b&k8=7b7b7b&kbh=1&kpsb=-1&kf=1&kbi=1").toString();
+    QUrl defaultUrl(defaultUrlString);
+    QWebEngineView *view = createWebView(defaultUrl);
+    int index = webStack->addWidget(view);
+    QListWidgetItem *item = new QListWidgetItem("New Tab");
+    tabListWidget->addItem(item);
+    tabListWidget->setCurrentRow(index);
+    tabListWidget->setHorizontalScrollMode(QAbstractItemView::ScrollPerPixel);
+    tabListWidget->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    webStack->setCurrentIndex(index);
+    addressBar->setText(defaultUrl.toString());
+}
+
+void MainWindow::switchTab(int index) {
+    if (index < 0 || index >= webStack->count())
+        return;
+    webStack->setCurrentIndex(index);
+    QWebEngineView *view = qobject_cast<QWebEngineView*>(webStack->currentWidget());
+    if (view)
+        addressBar->setText(view->url().toString());
+}
+
+void MainWindow::updateTabTitle(int index, const QString &title) {
+    QListWidgetItem *item = tabListWidget->item(index);
+    if (!item)
+        return;
+
+    QWidget *widget = tabListWidget->itemWidget(item);
+    if (!widget) {
+        widget = new QWidget();
+        QHBoxLayout *layout = new QHBoxLayout(widget);
+        layout->setContentsMargins(0, 0, 0, 0);
+
+        QLabel *label = new QLabel(title);
+        layout->addWidget(label);
+        tabListWidget->setItemWidget(item, widget);
+        item->setData(Qt::UserRole, title);
+    }
+
+    QLabel *label = widget->findChild<QLabel *>();
+    if (label) {
+        label->setText(title);
+        item->setData(Qt::UserRole, title);
+        startScrolling(label, title);
+    }
+}
+
+void MainWindow::startScrolling(QLabel *label, const QString &newText)
+{
+    static QMap<QLabel*, QTimer*> timers;
+    static QMap<QLabel*, QString> originalTexts;
+    static QMap<QLabel*, int> scrollPositions;
+
+    if (timers.contains(label)) {
+        timers[label]->stop();
+        timers[label]->deleteLater();
+        timers.remove(label);
+    }
+
+    originalTexts[label] = newText;
+    scrollPositions[label] = 0;
+    int interval = 300;
+    QTimer *timer = new QTimer(label);
+    timers[label] = timer;
+    connect(timer, &QTimer::timeout, label, [label]() {
+        QString fullText = originalTexts[label];
+        if (fullText.isEmpty())
+            return;
+        int &pos = scrollPositions[label];
+        QString scrolledText = fullText.mid(pos) + " " + fullText.left(pos);
+        label->setText(scrolledText);
+        pos = (pos + 1) % fullText.length();
+    });
+
+    timer->start(interval);
+}
+
+void MainWindow::updateTabIcon(int index, const QIcon &icon) {
+    QListWidgetItem *item = tabListWidget->item(index);
+    if (item) {
+        item->setIcon(icon);
+    }
+}
+void MainWindow::updateTabDisplayMode() {
+    const int threshold = 150;
+    bool smallMode = sidebarWidget->width() < threshold;
+    for (int i = 0; i < tabListWidget->count(); ++i) {
+        QListWidgetItem *item = tabListWidget->item(i);
+        if (item) {
+            if (smallMode) {
+                item->setText("");
+            } else {
+                item->setText(item->data(Qt::UserRole).toString());
+            }
+        }
+    }
+}
+
+void MainWindow::navigateToUrl() {
+    QString input = addressBar->text().trimmed();
+    QUrl urlInput = QUrl::fromUserInput(input);
+    int currentIndex = webStack->currentIndex();
+    if (input.startsWith("!media ")) {
+        QString extraQuery = input.mid(QString("!media").length()).trimmed();
+        for (int i = 0; i < webStack->count(); ++i) {
+            QListWidgetItem *item = tabListWidget->item(i);
+            if (item && item->text() == "Media") {
+                tabListWidget->setCurrentRow(i);
+                webStack->setCurrentIndex(i);
+                addressBar->setText(input);
+                Media *mediaTab = qobject_cast<Media*>(webStack->widget(i));
+                if (mediaTab)
+                    mediaTab->setExtraText(extraQuery);
+                return;
+            }
+        }
+        QWidget *currentWidget = webStack->widget(currentIndex);
+        if (currentWidget) {
+            webStack->removeWidget(currentWidget);
+            delete currentWidget;
+        }
+        Media *mediaDisplay = new Media(extraQuery);
+        mediaDisplay->setObjectName("MediaWindow");
+        mediaDisplay->setStyleSheet("border: 1px; border-radius: 15px; background: 2%");
+        webStack->insertWidget(currentIndex, mediaDisplay);
+        webStack->setCurrentIndex(currentIndex);
+        QListWidgetItem *item = tabListWidget->item(currentIndex);
+        if (item)
+            item->setText("Media");
+        addressBar->setText(input);
+        return;
+    }
+    else if (input.startsWith("!")) {
+        QStringList parts = input.split(" ", Qt::SkipEmptyParts);
+        if (parts.size() >= 2) {
+            QString command = parts[0].mid(1);
+            QString searchQuery = parts.mid(1).join(" ");
+            if (bangMap.contains(command)) {
+                QString urlTemplate = bangMap.value(command);
+                QString encodedQuery = QString::fromUtf8(QUrl::toPercentEncoding(searchQuery));
+                urlTemplate.replace("{search}", encodedQuery, Qt::CaseSensitive);
+                QUrl bangUrl(urlTemplate);
+                QWebEngineView *view = qobject_cast<QWebEngineView*>(webStack->currentWidget());
+                if (view) {
+                    view->setUrl(bangUrl);
+                    addressBar->setText(bangUrl.toString());
+                } else {
+                    QWidget *currentWidget = webStack->widget(currentIndex);
+                    if (currentWidget) {
+                        webStack->removeWidget(currentWidget);
+                        delete currentWidget;
+                    }
+                    QWebEngineView *newView = createWebView(bangUrl);
+                    webStack->insertWidget(currentIndex, newView);
+                    webStack->setCurrentIndex(currentIndex);
+                    QListWidgetItem *item = tabListWidget->item(currentIndex);
+                    if (item)
+                        item->setText(newView->url().host());
+                    addressBar->setText(newView->url().toString());
+                }
+            }
+        }
+        return;
+    }
+
+    bool isLikelyUrl = urlInput.isValid() && (input.contains('.') || input.toLower().startsWith("http"));
+    if (!isLikelyUrl) {
+        QString encodedInput = QString::fromUtf8(QUrl::toPercentEncoding(input));
+        QString duckUrl = QString("https://duckduckgo.com/?q=%1").arg(encodedInput);
+        urlInput = QUrl(duckUrl);
+    }
+
+    QWebEngineView *currentBrowser = qobject_cast<QWebEngineView*>(webStack->currentWidget());
+    if (!currentBrowser) {
+        QWidget *customWidget = webStack->widget(currentIndex);
+        if (customWidget) {
+            webStack->removeWidget(customWidget);
+            delete customWidget;
+        }
+        QWebEngineView *view = createWebView(urlInput);
+        webStack->insertWidget(currentIndex, view);
+        webStack->setCurrentIndex(currentIndex);
+        QListWidgetItem *currentTabItem = tabListWidget->item(currentIndex);
+        if (currentTabItem)
+            currentTabItem->setText(view->url().host());
+        addressBar->setText(view->url().toString());
+        return;
+    }
+    currentBrowser->setUrl(urlInput);
+    addressBar->setText(urlInput.toString());
+}
+
+void MainWindow::goBack() {
+    QWebEngineView *view = qobject_cast<QWebEngineView*>(webStack->currentWidget());
+    if (view)
+        view->back();
+}
+
+void MainWindow::goForward() {
+    QWebEngineView *view = qobject_cast<QWebEngineView*>(webStack->currentWidget());
+    if (view)
+        view->forward();
+}
+
+void MainWindow::reloadPage() {
+    QWebEngineView *view = qobject_cast<QWebEngineView*>(webStack->currentWidget());
+    if (view)
+        view->reload();
+}
+
+void MainWindow::goHome() {
+    QSettings settings("PraedoBrowser", "PraedoBrowser");
+    QString defaultUrlString = settings.value("defaultSearchEngine", "https://www.duckduckgo.com").toString();
+    QUrl defaultUrl(defaultUrlString);
+    QWidget *currentWidget = webStack->currentWidget();
+    if (currentWidget && currentWidget->metaObject()->className() == QString("QWidget")) {
+        int index = webStack->indexOf(currentWidget);
+        webStack->removeWidget(currentWidget);
+        delete currentWidget;
+        QWebEngineView *view = createWebView(defaultUrl);
+        int newIndex = webStack->addWidget(view);
+        webStack->setCurrentIndex(newIndex);
+        addressBar->setText(defaultUrl.toString());
+    } else {
+        QWebEngineView *view = qobject_cast<QWebEngineView*>(webStack->currentWidget());
+        if (view) {
+            view->setUrl(defaultUrl);
+        }
+    }
+}
+
+void MainWindow::createBookmarkBar() {
+    bookmarkBar = new QWidget(centralWidget());
+
+    QSettings settings("PraedoBrowser", "PraedoBrowser");
+    QVariantList bookmarks = settings.value("Bookmarks").toList();
+
+    // if no bookmarks, don't show or hook hover events
+    if (bookmarks.isEmpty()) {
+        bookmarkBar->hide();
+        return;
+    }
+
+    // style the bar
+    QString rawTopBar = settings.value("topBarColor", "#2A2118").toString();
+    QColor base(rawTopBar);
+    QColor light = base.lighter(105);
+    QString lightTopBar = light.name();   // back to “#RRGGBB”
+    bookmarkBar->setStyleSheet(QString(
+                                   "background-color: %1;"
+                                   ).arg(lightTopBar));
+
+    // start fully collapsed
+    bookmarkBar->setMaximumHeight(0);
+
+    // populate and hook hover
+    refreshBookmarkBar();
+    bookmarkBar->installEventFilter(this);
+}
+
+void MainWindow::refreshBookmarkBar() {
+    if (!bookmarkBar)
+        return;
+
+    QSettings settings("PraedoBrowser", "PraedoBrowser");
+    QVariantList bookmarks = settings.value("Bookmarks").toList();
+
+    // if user removed all bookmarks, collapse & hide
+    if (bookmarks.isEmpty()) {
+        bookmarkBar->setVisible(false);
+        bookmarkBar->setMaximumHeight(0);
+        return;
+    }
+
+    // clear out any existing buttons/layout
+    QLayout *oldLayout = bookmarkBar->layout();
+    if (oldLayout) {
+        while (oldLayout->count() > 0) {
+            QLayoutItem *child = oldLayout->takeAt(0);
+            if (child->widget())
+                child->widget()->deleteLater();
+            delete child;
+        }
+        delete oldLayout;
+    }
+
+    // rebuild bookmark buttons
+    QHBoxLayout *bookmarkLayout = new QHBoxLayout(bookmarkBar);
+    bookmarkLayout->setContentsMargins(10, 0, 10, 0);
+    bookmarkLayout->setSpacing(20);
+
+    for (const QVariant &var : bookmarks) {
+        QVariantMap bm = var.toMap();
+        QString title    = bm["title"].toString();
+        QString urlStr   = bm["url"].toString();
+        QString logoPath = bm["logoPath"].toString();
+
+        QIcon icon;
+        if (!logoPath.isEmpty()) {
+            QPixmap pixmap(logoPath);
+            if (!pixmap.isNull())
+                icon = QIcon(pixmap);
+            else
+                icon = QIcon(":/icons/default_logo.png");
+        } else {
+            icon = QIcon(":/icons/default_logo.png");
+        }
+
+        QPushButton *btn = new QPushButton(bookmarkBar);
+        btn->setIcon(icon);
+        btn->setIconSize(QSize(24, 24));
+        btn->setToolTip(title);
+        btn->setStyleSheet(
+            "QPushButton { background: transparent; border: none; }"
+            "QPushButton:hover { border: 1px solid #AAA; border-radius: 3px; }"
+            );
+        btn->setProperty("bookmarkUrl", urlStr);
+        connect(btn, &QPushButton::clicked, [this, urlStr]() {
+            QWebEngineView *view = qobject_cast<QWebEngineView*>(webStack->currentWidget());
+            if (view)
+                view->setUrl(QUrl(urlStr));
+            else {
+                QWebEngineView *newView = createWebView(QUrl(urlStr));
+                int index = webStack->addWidget(newView);
+                webStack->setCurrentIndex(index);
+            }
+        });
+
+        bookmarkLayout->addWidget(btn);
+    }
+
+    bookmarkLayout->addStretch();
+}
+
+void MainWindow::showBookmarkBar() {
+    // only animate open if the bar exists and has at least one bookmark
+    if (!bookmarkBar || !bookmarkBar->layout())
+        return;
+
+    QSettings settings("PraedoBrowser", "PraedoBrowser");
+    QVariantList bookmarks = settings.value("Bookmarks").toList();
+    if (bookmarks.isEmpty())
+        return;
+
+    int fullHeight = 30;
+    if (bookmarkBar->maximumHeight() >= fullHeight)
+        return;
+
+    bookmarkBar->setVisible(true);
+    QPropertyAnimation *animation = new QPropertyAnimation(bookmarkBar, "maximumHeight");
+    animation->setDuration(300);
+    animation->setStartValue(bookmarkBar->maximumHeight());
+    animation->setEndValue(fullHeight);
+    animation->setEasingCurve(QEasingCurve::OutQuad);
+    animation->start(QAbstractAnimation::DeleteWhenStopped);
+}
+void MainWindow::hideBookmarkBar() {
+    if (!bookmarkBar)
+        return;
+    if (bookmarkBar->maximumHeight() == 0)
+        return;
+    if (bookmarkBar->underMouse())
+        return;
+    QPropertyAnimation *animation = new QPropertyAnimation(bookmarkBar, "maximumHeight");
+    animation->setDuration(300);
+    animation->setStartValue(bookmarkBar->maximumHeight());
+    animation->setEndValue(0);
+    animation->setEasingCurve(QEasingCurve::InQuad);
+    connect(animation, &QPropertyAnimation::finished, [this]() {
+        bookmarkBar->setVisible(false);
+    });
+    animation->start(QAbstractAnimation::DeleteWhenStopped);
+    refreshBookmarkBar();
+}
+
+void MainWindow::toggleSidebar() {
+    int fullWidth = 250;
+    bool currentlyVisible = sidebarWidget->isVisible();
+    int targetWidth = currentlyVisible ? 0 : fullWidth;
+    if (!currentlyVisible) {
+        sidebarWidget->setMaximumWidth(0);
+        sidebarWidget->show();
+    }
+    QPropertyAnimation *animation = new QPropertyAnimation(sidebarWidget, "maximumWidth");
+    animation->setDuration(300);
+    animation->setEasingCurve(QEasingCurve::InOutQuad);
+    animation->setStartValue(currentlyVisible ? sidebarWidget->width() : 0);
+    animation->setEndValue(targetWidth);
+    connect(animation, &QPropertyAnimation::finished, [this, targetWidth]() {
+        if (targetWidth == 0) {
+            sidebarWidget->hide();
+            sidebarVisible = false;
+        } else {
+            sidebarVisible = true;
+        }
+    });
+    animation->start(QAbstractAnimation::DeleteWhenStopped);
+}
+
+void MainWindow::hideSidebar() {
+    if (!sidebarWidget)
+        return;
+    if (!sidebarWidget->isVisible() || sidebarWidget->width() == 0)
+        return;
+    int currentWidth = sidebarWidget->width();
+    QPropertyAnimation *animation = new QPropertyAnimation(sidebarWidget, "maximumWidth");
+    animation->setDuration(300);
+    animation->setEasingCurve(QEasingCurve::InOutQuad);
+    animation->setStartValue(currentWidth);
+    animation->setEndValue(0);
+    connect(animation, &QPropertyAnimation::finished, [this]() {
+        sidebarWidget->hide();
+        sidebarVisible = false;
+    });
+    animation->start(QAbstractAnimation::DeleteWhenStopped);
+}
+void MainWindow::reloadThemeSettings()
+{
+    if (!settingsReloadTimer->isActive())
+        settingsReloadTimer->start();
+}
+void MainWindow::toggleCentralSearch()
+{
+    if (!centralSearchDialog) {
+        // build a frameless, non-modal dialog
+        centralSearchDialog = new QDialog(this,
+                                          Qt::FramelessWindowHint);
+        centralSearchDialog->setModal(false);
+
+        QHBoxLayout *lay = new QHBoxLayout(centralSearchDialog);
+        centralSearchEdit = new QLineEdit(centralSearchDialog);
+        centralSearchEdit->setPlaceholderText(
+            "Search or enter URL...");
+        centralSearchEdit->setFixedWidth(600);
+        lay->addWidget(centralSearchEdit);
+
+        connect(centralSearchEdit,
+                &QLineEdit::returnPressed,
+                this,
+                &MainWindow::onCentralSearchReturn);
+
+        centralSearchDialog->setLayout(lay);
+    }
+
+    // center over main window
+    QSize hint = centralSearchDialog->sizeHint();
+    QRect geo = this->geometry();
+    int x = geo.x() + (geo.width()  - hint.width())/2;
+    int y = geo.y() + (geo.height() - hint.height())/2;
+    centralSearchDialog->move(x, y);
+
+    centralSearchDialog->show();
+    centralSearchEdit->setFocus();
+}
+
+void MainWindow::onCentralSearchReturn()
+{
+    QString input = centralSearchEdit->text().trimmed();
+    centralSearchDialog->hide();
+    if (input.isEmpty())
+        return;
+
+    // reuse your normal navigate logic:
+    addressBar->setText(input);
+    navigateToUrl();
+}

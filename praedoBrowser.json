@@ -1,0 +1,32 @@
+{
+    "id": "com.example.praedoBrowser",
+    "runtime": "org.kde.Platform",
+    "runtime-version": "6.5",
+    "sdk": "org.kde.Sdk",
+    "command": "praedoBrowser",
+    "modules": [
+        {
+            "name": "qt6-webengine",
+            "buildsystem": "simple",
+            "build-commands": [
+                "echo 'Qt WebEngine is part of the KDE SDK, no manual build required'"
+            ]
+        },
+        {
+            "name": "praedoBrowser",
+            "buildsystem": "cmake",
+            "sources": [
+                {
+                    "type": "dir",
+                    "path": "build"
+                }
+            ],
+            "build-options": {
+                "env": {
+                    "QT_DEBUG_FIND_PACKAGE": "ON",
+                    "CMAKE_INSTALL_PREFIX": "/app"
+                }
+            }
+        }
+    ]
+}

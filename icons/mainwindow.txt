@@ -1,0 +1,617 @@
+#include "mainwindow.h"
+#include "settings.h"
+#include "media.h"
+
+#include <QShortcut>
+#include <QToolBar>
+#include <QAction>
+#include <QIcon>
+#include <QLabel>
+#include <QLineEdit>
+#include <QHBoxLayout>
+#include <QVBoxLayout>
+#include <QListWidget>
+#include <QStackedWidget>
+#include <QPushButton>
+#include <QSplitter>
+#include <QWebEngineView>
+#include <QUrl>
+#include <QListWidgetItem>
+#include <QApplication>
+#include <QPalette>
+#include <QDebug>
+#include <QPainter>
+#include <QPixmap>
+#include <QStyle>
+#include <QScreen>
+#include <QGuiApplication>
+#include <QWebEngineSettings>
+#include <QWebEngineProfile>
+#include <QWebEngineFullScreenRequest>
+#include <QSettings>
+#include <QMouseEvent>
+
+static QIcon createMonochromeIcon(const QIcon &srcIcon, const QSize &size, const QColor &color) {
+    QPixmap pixmap = srcIcon.pixmap(size);
+    QPixmap monochromePixmap(size);
+    monochromePixmap.fill(Qt::transparent);
+    QPainter painter(&monochromePixmap);
+    painter.setCompositionMode(QPainter::CompositionMode_Source);
+    painter.drawPixmap(0, 0, pixmap);
+    painter.setCompositionMode(QPainter::CompositionMode_SourceIn);
+    painter.fillRect(monochromePixmap.rect(), color);
+    painter.end();
+    return QIcon(monochromePixmap);
+}
+
+static QIcon createSymbolIcon(const QSize &size, const QColor &color, const QString &symbol) {
+    QPixmap pixmap(size);
+    pixmap.fill(Qt::transparent);
+
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing);
+
+    QFont font = painter.font();
+    font.setBold(true);
+    int pixelSize = static_cast<int>(qMin(size.width(), size.height()) * 0.8);
+    font.setPixelSize(pixelSize);
+    painter.setFont(font);
+    painter.setPen(color);
+
+    painter.drawText(pixmap.rect(), Qt::AlignCenter, symbol);
+    return QIcon(pixmap);
+}
+
+static QIcon createHamburgerIcon(const QSize &size, const QColor &color) {
+    QPixmap pixmap(size);
+    pixmap.fill(Qt::transparent);
+
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing);
+
+    QPen pen(color);
+    pen.setWidth(2);
+    pen.setCapStyle(Qt::RoundCap);
+    painter.setPen(pen);
+
+    int w = size.width();
+    int h = size.height();
+    int margin = qMax(2, size.width() / 8);
+    int gap = (h - 2 * margin) / 2;
+    int y1 = margin;
+    int y2 = margin + gap;
+    int y3 = h - margin;
+
+    painter.drawLine(QPoint(margin, y1), QPoint(w - margin, y1));
+    painter.drawLine(QPoint(margin, y2), QPoint(w - margin, y2));
+    painter.drawLine(QPoint(margin, y3), QPoint(w - margin, y3));
+
+    return QIcon(pixmap);
+}
+
+static QIcon createPlusIcon(const QSize &size, const QColor &color) {
+    QPixmap pixmap(size);
+    pixmap.fill(Qt::transparent);
+
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing);
+
+    QPen pen(color);
+    pen.setWidth(2);
+    pen.setCapStyle(Qt::RoundCap);
+    painter.setPen(pen);
+
+    int w = size.width();
+    int h = size.height();
+    int margin = qMax(2, size.width() / 4);
+    painter.drawLine(QPoint(margin, h/2), QPoint(w - margin, h/2));
+    painter.drawLine(QPoint(w/2, margin), QPoint(w/2, h - margin));
+
+    return QIcon(pixmap);
+}
+
+static QIcon createHouseIcon(const QSize &size, const QColor &color) {
+    QPixmap pixmap(size);
+    pixmap.fill(Qt::transparent);
+
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing);
+
+    QPen pen(color);
+    pen.setWidth(2);
+    pen.setCapStyle(Qt::RoundCap);
+    painter.setPen(pen);
+    painter.setBrush(Qt::NoBrush);
+
+    int w = size.width();
+    int h = size.height();
+    int margin = qMax(2, size.width()/8);
+
+    QPoint roofPeak(w/2, margin);
+    QPoint roofLeft(margin, h/2);
+    QPoint roofRight(w - margin, h/2);
+    QPolygon roof;
+    roof << roofPeak << roofRight << roofLeft;
+    painter.drawPolygon(roof);
+
+    int inset = w / 6;
+    QRect baseRect(margin + inset, h/2, w - 2 * (margin + inset), h/2 - margin);
+    painter.drawRect(baseRect);
+
+    return QIcon(pixmap);
+}
+
+
+static QMap<QString, QString> createBangMap() {
+    QMap<QString, QString> searchMap;
+    searchMap.insert("g",     "https://www.google.com/search?q={search}");
+    searchMap.insert("ddg",   "https://duckduckgo.com/?q={search}");
+    searchMap.insert("wiki",  "https://en.wikipedia.org/wiki/Special:Search?search={search}");
+    searchMap.insert("reddit","https://www.reddit.com/search/?q={search}");
+    searchMap.insert("yt",    "https://www.youtube.com/results?search_query={search}");
+    searchMap.insert("media2", "https://hydrahd.sh/index.php?menu=search&query={search}");
+    searchMap.insert("ebay",  "https://www.ebay.com/sch/i.html?_nkw={search}");
+    searchMap.insert("steam", "https://store.steampowered.com/search/?term={search}");
+    searchMap.insert("gh",    "https://github.com/search?q={search}");
+    searchMap.insert("tw",    "https://twitter.com/search?q={search}");
+    searchMap.insert("ig",    "https://www.instagram.com/explore/tags/{search}");
+    searchMap.insert("fb",    "https://www.facebook.com/search/top/?q={search}");
+    searchMap.insert("a",     "https://www.amazon.com/s?k={search}");
+    searchMap.insert("trans", "https://translate.google.com/?sl=auto&tl=en&text={search}&op=translate");
+    searchMap.insert("bing",  "https://www.bing.com/search?q={search}");
+    searchMap.insert("imdb",  "https://www.imdb.com/find?q={search}");
+    searchMap.insert("stack", "https://stackoverflow.com/search?q={search}");
+    searchMap.insert("news",  "https://news.google.com/search?q={search}");
+    searchMap.insert("maps",  "https://www.google.com/maps/search/{search}");
+    searchMap.insert("lyrics","https://genius.com/search?q={search}");
+    searchMap.insert("recipe","https://www.allrecipes.com/search/results/?wt={search}");
+    searchMap.insert("jobs",  "https://www.indeed.com/jobs?q={search}");
+    searchMap.insert("weather", "https://www.weather.com/weather/today/l/{search}");
+    searchMap.insert("currency", "https://www.xe.com/currencyconverter/convert/?Amount=1&From={search}");
+    searchMap.insert("stocks", "https://www.marketwatch.com/investing/stock/{search}");
+    searchMap.insert("symbols", "https://unicode-table.com/en/search/?q={search}");
+    searchMap.insert("fonts", "https://www.dafont.com/search.php?q={search}");
+    searchMap.insert("books", "https://www.goodreads.com/search?q={search}");
+    searchMap.insert("scholar", "https://scholar.google.com/scholar?q={search}");
+    searchMap.insert("pubmed", "https://pubmed.ncbi.nlm.nih.gov/?term={search}");
+    searchMap.insert("recipes2", "https://www.foodnetwork.com/search/{search}-");
+    searchMap.insert("dictionary", "https://www.merriam-webster.com/dictionary/{search}");
+    searchMap.insert("thesaurus", "https://www.thesaurus.com/browse/{search}");
+    searchMap.insert("code", "https://github.com/search?q={search}&type=code");
+    searchMap.insert("anime", "https://myanimelist.net/search/all?q={search}");
+    searchMap.insert("movies", "https://letterboxd.com/search/{search}");
+    searchMap.insert("games", "https://www.metacritic.com/search/game/{search}/results");
+    searchMap.insert("cars", "https://www.autotrader.com/cars-for-sale/{search}");
+    searchMap.insert("flight", "https://www.google.com/search?q=flight+{search}");
+    searchMap.insert("train", "https://www.thetrainline.com/search?q={search}");
+    searchMap.insert("sports", "https://www.espn.com/search/results?q={search}");
+    searchMap.insert("history", "https://history.com/search?q={search}");
+    return searchMap;
+}
+
+MainWindow::MainWindow(QWidget *parent)
+    : QMainWindow(parent), sidebarVisible(true)
+{
+    qputenv("QTWEBENGINE_CHROMIUM_FLAGS", "--disable-gpu --disable-software-rasterizer");
+    setWindowTitle("Praedo Browser");
+    applyModernBlueTheme();
+    createNavigationToolbar();
+    createCentralWidgets();
+    addNewTab();
+    QShortcut *reloadShortcut = new QShortcut(QKeySequence(Qt::Key_F5), this);
+    connect(reloadShortcut, &QShortcut::activated, this, &MainWindow::reloadPage);
+}
+
+
+MainWindow::~MainWindow()
+{
+}
+
+bool MainWindow::eventFilter(QObject *obj, QEvent *event) {
+    if (obj == tabListWidget && event->type() == QEvent::MouseButtonPress) {
+        QMouseEvent *mouseEvent = static_cast<QMouseEvent*>(event);
+
+        if (mouseEvent->button() == Qt::MiddleButton) {
+            QListWidgetItem *item = tabListWidget->itemAt(mouseEvent->pos());
+            if (item) {
+                int index = tabListWidget->row(item);
+                delete tabListWidget->takeItem(index);
+                QWidget *tab = webStack->widget(index);
+                webStack->removeWidget(tab);
+                delete tab;
+            }
+            return true;
+        } else if (mouseEvent->button() == Qt::RightButton) {
+            return true;
+        }
+    }
+    return QMainWindow::eventFilter(obj, event);
+}
+
+
+void MainWindow::applyModernBlueTheme() {
+    // Palette: using modern warm tones with beige accents.
+    QPalette warmPalette;
+    warmPalette.setColor(QPalette::Window, QColor("#2A2118"));
+    warmPalette.setColor(QPalette::WindowText, QColor("#D4B398"));
+    warmPalette.setColor(QPalette::Base, QColor("#1E1812"));
+    warmPalette.setColor(QPalette::AlternateBase, QColor("#19140F"));
+    warmPalette.setColor(QPalette::ToolTipBase, QColor("#D4B398"));
+    warmPalette.setColor(QPalette::ToolTipText, QColor("#D4B398"));
+    warmPalette.setColor(QPalette::Text, QColor("#D4B398"));
+    warmPalette.setColor(QPalette::Button, QColor("#2A2118"));
+    warmPalette.setColor(QPalette::ButtonText, QColor("#D4B398"));
+    warmPalette.setColor(QPalette::BrightText, Qt::red);
+    warmPalette.setColor(QPalette::Link, QColor("#D4B398"));
+    warmPalette.setColor(QPalette::Highlight, QColor("#D4B398"));
+    warmPalette.setColor(QPalette::HighlightedText, Qt::black);
+
+    qApp->setPalette(warmPalette);
+
+    QString styleSheet = R"(
+        QMainWindow {
+            background-color: hsla(40, 10%, 15%, 1); /* bg-1 */
+        }
+        QToolBar {
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 hsla(40, 12%, 12%, 1), stop:1 hsla(40, 12%, 12%, 1)); /* bg-2 */
+            padding: 6px;
+            border-bottom: 2px solid hsla(27, 41%, 71%, 1); /* border-light */
+        }
+
+        QToolBar::separator {
+            background: #D4B398;
+            width: 2px;
+        }
+        QLineEdit {
+            background-color: hsla(40, 5%, 10%, 1); /* bg-3 */
+            border: 2px solid #D4B398; /* accent-1 */
+            padding: 6px;
+            color: #D4B398;
+            border-radius: 6px;
+        }
+        QListWidget {
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 hsla(40, 18%, 8%, 1), stop:1 hsla(40, 5%, 10%, 1)); /* bg-4 to bg-3 */
+            border: none;
+            color: #D4B398;
+            border-top-right-radius: 15px; /* Curved only on the right */
+            border-bottom-right-radius: 15px; /* Curved only on the right */
+            padding: 10px;
+            box-shadow: 4px 0px 10px rgba(0, 0, 0, 0.3); /* Shadow effect on the right */
+        }
+        QListWidget::item {
+            padding: 8px;
+        }
+        QListWidget::item:selected {
+            background: hsla(40, 20%, 50%, 0.1); /* hover */
+            color: #D4B398;
+        }
+        QPushButton {
+            background-color: transparent;
+            border: 1px solid hsla(27, 41%, 71%, 0.3); /* button-border */
+            color: #D4B398;
+        }
+        QPushButton:hover {
+            background-color: hsla(40, 25%, 50%, 0.2); /* active */
+        }
+        QStackedWidget {
+            background-color: hsla(40, 18%, 8%, 1); /* bg-4 */
+        }
+
+    )";
+    qApp->setStyleSheet(styleSheet);
+}
+void MainWindow::createNavigationToolbar() {
+    navToolBar = addToolBar("Navigation");
+    QSize iconSize(18, 18);
+    navToolBar->setIconSize(iconSize);
+
+    QIcon backIcon = createSymbolIcon(iconSize, QColor("#D4B398"), "<");
+    QIcon forwardIcon = createSymbolIcon(iconSize, QColor("#D4B398"), ">");
+    QIcon reloadIcon  = createMonochromeIcon(
+        QIcon::fromTheme("view-refresh",
+                         style()->standardIcon(QStyle::SP_BrowserReload)),
+        iconSize, QColor("#D4B398"));
+    QIcon homeIcon    = createHouseIcon(iconSize, QColor("#D4B398"));
+    QIcon hamburgerIcon = createHamburgerIcon(iconSize, QColor("#D4B398"));
+
+    backAction    = new QAction(backIcon, "", this);
+    forwardAction = new QAction(forwardIcon, "", this);
+    reloadAction  = new QAction(reloadIcon, "", this);
+    homeAction    = new QAction(homeIcon, "", this);
+    hamburgerAction = new QAction(hamburgerIcon, "", this);
+
+    navToolBar->addAction(hamburgerAction);
+    navToolBar->addSeparator();
+    navToolBar->addAction(backAction);
+    navToolBar->addAction(forwardAction);
+    navToolBar->addAction(reloadAction);
+    navToolBar->addAction(homeAction);
+
+  //  QWidget *leftSpacer = new QWidget(this);
+  //  leftSpacer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+//navToolBar->addWidget(leftSpacer);
+
+    addressBar = new QLineEdit(this);
+    addressBar->setPlaceholderText("Search or enter URL...");
+    addressBar->setClearButtonEnabled(true);
+    int screenWidth = QGuiApplication::primaryScreen()->availableGeometry().width();
+    addressBar->setMinimumWidth(screenWidth * 0.30);
+    addressBar->setMaximumWidth(screenWidth * 0.30);
+    navToolBar->addWidget(addressBar);
+
+    QWidget *rightSpacer = new QWidget(this);
+    rightSpacer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    navToolBar->addWidget(rightSpacer);
+
+    QAction *settingsAction = new QAction(hamburgerIcon, "", this);
+    connect(settingsAction, &QAction::triggered, this, [this]() {
+        SettingsDialog settingsDialog(this);
+        if (settingsDialog.exec() == QDialog::Accepted) {
+            QSettings settings("MyCompany", "PraedoBrowser");
+            QString defaultSearch = settings.value("defaultSearchEngine", "https://www.google.com/search?q=").toString();
+            qDebug() << "Default search engine updated to:" << defaultSearch;
+        }
+    });
+    navToolBar->addSeparator();
+    navToolBar->addAction(settingsAction);
+
+    connect(addressBar, &QLineEdit::returnPressed, this, &MainWindow::navigateToUrl);
+    connect(backAction, &QAction::triggered, this, &MainWindow::goBack);
+    connect(forwardAction, &QAction::triggered, this, &MainWindow::goForward);
+    connect(reloadAction, &QAction::triggered, this, &MainWindow::reloadPage);
+    connect(homeAction, &QAction::triggered, this, &MainWindow::goHome);
+    connect(hamburgerAction, &QAction::triggered, this, &MainWindow::toggleSidebar);
+
+    bangMap = createBangMap();
+}
+
+
+void MainWindow::createCentralWidgets() {
+    QWidget *centralWidget = new QWidget(this);
+    setCentralWidget(centralWidget);
+
+    QSplitter *splitter = new QSplitter(Qt::Horizontal, centralWidget);
+
+    sidebarWidget = new QWidget(splitter);
+    QVBoxLayout *sidebarLayout = new QVBoxLayout(sidebarWidget);
+    sidebarLayout->setContentsMargins(0, 0, 0, 0);
+    sidebarLayout->setSpacing(0);
+
+    tabListWidget = new QListWidget(sidebarWidget);
+    sidebarLayout->addWidget(tabListWidget);
+
+    tabListWidget->installEventFilter(this);
+
+    QScreen *screen = QGuiApplication::primaryScreen();
+    if (screen) {
+        int availWidth = screen->availableGeometry().width();
+        int minWidth = static_cast<int>(availWidth * 0.05);
+        int maxWidth = static_cast<int>(availWidth * 0.25);
+        sidebarWidget->setMinimumWidth(minWidth);
+        sidebarWidget->setMaximumWidth(maxWidth);
+    } else {
+        sidebarWidget->setMinimumWidth(50);
+        sidebarWidget->setMaximumWidth(250);
+    }
+
+    QSize buttonIconSize(32, 32);
+    QIcon plusIcon = createPlusIcon(buttonIconSize, Qt::white);
+    addTabButton = new QPushButton(plusIcon, "", sidebarWidget);
+    addTabButton->setToolTip("Add New Tab");
+    addTabButton->setIconSize(buttonIconSize);
+    sidebarLayout->addWidget(addTabButton);
+
+    connect(tabListWidget, &QListWidget::currentRowChanged, this, &MainWindow::switchTab);
+    connect(addTabButton, &QPushButton::clicked, this, &MainWindow::addNewTab);
+
+    webStack = new QStackedWidget(splitter);
+
+    splitter->setStretchFactor(0, 3);
+    splitter->setStretchFactor(1, 14);
+
+    QHBoxLayout *mainLayout = new QHBoxLayout(centralWidget);
+    mainLayout->setContentsMargins(0, 0, 0, 0);
+    mainLayout->addWidget(splitter);
+}
+
+QWebEngineView* MainWindow::createWebView(const QUrl &url) {
+    QWebEngineView *view = new QWebEngineView;
+    view->setUrl(url);
+    view->settings()->setAttribute(QWebEngineSettings::FullScreenSupportEnabled, true);
+    connect(view->page(), &QWebEnginePage::fullScreenRequested,
+            this, [this, view](QWebEngineFullScreenRequest request) {
+                qDebug() << "Fullscreen request:" << request.toggleOn();
+                request.accept();
+                toggleFullScreen(view, request.toggleOn());
+            });
+
+    connect(view, &QWebEngineView::urlChanged, this, [this, view](const QUrl &url) {
+        if (webStack->currentWidget() == view)
+            addressBar->setText(url.toString());
+    });
+
+    connect(view, &QWebEngineView::titleChanged, this, [this, view](const QString &title) {
+        int index = webStack->indexOf(view);
+        if (index != -1)
+            updateTabTitle(index, title);
+    });
+
+    return view;
+}
+
+
+void MainWindow::toggleFullScreen(QWebEngineView *view, bool enable) {
+    if (enable) {
+        if(navToolBar)
+            navToolBar->hide();
+        if(sidebarWidget)
+            sidebarWidget->hide();
+        this->showFullScreen();
+    } else {
+        if(navToolBar)
+            navToolBar->show();
+        if(sidebarWidget)
+            sidebarWidget->show();
+        this->showNormal();
+    }
+}
+
+void MainWindow::addNewTab() {
+    QSettings settings("MyCompany", "PraedoBrowser");
+    QString defaultUrlString = settings.value("defaultSearchEngine",
+                                              "https://www.duckduckgo.com").toString();
+    QUrl defaultUrl(defaultUrlString);
+
+    QWebEngineView *view = createWebView(defaultUrl);
+    int index = webStack->addWidget(view);
+
+    QListWidgetItem *item = new QListWidgetItem("New Tab");
+    tabListWidget->addItem(item);
+    tabListWidget->setCurrentRow(index);
+
+    webStack->setCurrentIndex(index);
+    addressBar->setText(defaultUrl.toString());
+}
+
+void MainWindow::switchTab(int index) {
+    if (index < 0 || index >= webStack->count())
+        return;
+    webStack->setCurrentIndex(index);
+    QWebEngineView *view = qobject_cast<QWebEngineView*>(webStack->currentWidget());
+    if (view)
+        addressBar->setText(view->url().toString());
+}
+
+void MainWindow::updateTabTitle(int index, const QString &title) {
+    QListWidgetItem *item = tabListWidget->item(index);
+    if (item)
+        item->setText(title);
+}
+
+void MainWindow::navigateToUrl() {
+    QString input = addressBar->text().trimmed();
+    QUrl urlInput = QUrl::fromUserInput(input);
+    int currentIndex = webStack->currentIndex();
+
+    // If the user types a command that starts with "!media"
+    if (input.startsWith("!media ")) {
+        // Extract any extra text after "!media"
+        QString extraQuery = input.mid(QString("!media").length()).trimmed();
+
+        // First, check if a Media tab already exists.
+        for (int i = 0; i < webStack->count(); ++i) {
+            QListWidgetItem *item = tabListWidget->item(i);
+            if (item && item->text() == "Media") {
+                // Switch to the existing Media tab.
+                tabListWidget->setCurrentRow(i);
+                webStack->setCurrentIndex(i);
+                addressBar->setText(input);
+                // Optionally update the extra text.
+                Media *mediaTab = qobject_cast<Media*>(webStack->widget(i));
+                if (mediaTab)
+                    mediaTab->setExtraText(extraQuery);
+                return;
+            }
+        }
+
+        // Remove the current widget (typically a browser view)
+        QWidget *currentWidget = webStack->widget(currentIndex);
+        if (currentWidget) {
+            webStack->removeWidget(currentWidget);
+            delete currentWidget;
+        }
+
+        // Create an instance of the Media widget from your new module.
+        // Its constructor will automatically trigger the IMDb search if extraQuery is not empty.
+        Media *mediaDisplay = new Media(extraQuery);
+
+        // Insert the Media widget at the current index so the tab order is preserved.
+        webStack->insertWidget(currentIndex, mediaDisplay);
+        webStack->setCurrentIndex(currentIndex);
+
+        // Update the corresponding tab title.
+        QListWidgetItem *item = tabListWidget->item(currentIndex);
+        if (item) {
+            item->setText("Media");
+        }
+        // Show the entire command in the address bar.
+        addressBar->setText(input);
+        return;
+    }
+
+    // If you're in Media mode (the tab title is "Media") and the user enters a valid non-media input,
+    // exit Media mode and restore a normal browser view.
+    QListWidgetItem *currentTabItem = tabListWidget->item(currentIndex);
+    if (currentTabItem && currentTabItem->text() == "Media") {
+        // Note: We check that the input does NOT start with "!media" to determine it’s a normal URL or search.
+        if (urlInput.isValid() && !input.startsWith("!media")) {
+            QWidget *currentWidget = webStack->widget(currentIndex);
+            webStack->removeWidget(currentWidget);
+            delete currentWidget;
+            QWebEngineView *view = createWebView(urlInput);
+            webStack->insertWidget(currentIndex, view);
+            webStack->setCurrentIndex(currentIndex);
+            currentTabItem->setText(view->url().host());
+            addressBar->setText(view->url().toString());
+            return;
+        }
+    }
+
+    // Otherwise, normal browser mode.
+    QWebEngineView *view = qobject_cast<QWebEngineView*>(webStack->currentWidget());
+    if (view) {
+        view->setUrl(urlInput);
+    }
+}
+
+
+void MainWindow::goBack() {
+    QWebEngineView *view = qobject_cast<QWebEngineView*>(webStack->currentWidget());
+    if (view)
+        view->back();
+}
+
+void MainWindow::goForward() {
+    QWebEngineView *view = qobject_cast<QWebEngineView*>(webStack->currentWidget());
+    if (view)
+        view->forward();
+}
+
+void MainWindow::reloadPage() {
+    QWebEngineView *view = qobject_cast<QWebEngineView*>(webStack->currentWidget());
+    if (view)
+        view->reload();
+}
+
+void MainWindow::goHome() {
+    QSettings settings("MyCompany", "PraedoBrowser");
+    QString defaultUrlString = settings.value("defaultSearchEngine",
+                                              "https://www.duckduckgo.com").toString();
+    QUrl defaultUrl(defaultUrlString);
+
+    QWidget *currentWidget = webStack->currentWidget();
+
+    // Check if the current widget is the black screen
+    if (currentWidget && currentWidget->metaObject()->className() == QString("QWidget")) {
+        int index = webStack->indexOf(currentWidget);
+        webStack->removeWidget(currentWidget);
+        delete currentWidget;
+
+        // Restore the browser view
+        QWebEngineView *view = createWebView(defaultUrl);
+        int newIndex = webStack->addWidget(view);
+        webStack->setCurrentIndex(newIndex);
+
+        addressBar->setText(defaultUrl.toString());
+    } else {
+        // Regular home button behavior
+        QWebEngineView *view = qobject_cast<QWebEngineView*>(webStack->currentWidget());
+        if (view) {
+            view->setUrl(defaultUrl);
+        }
+    }
+}
+void MainWindow::toggleSidebar() {
+    sidebarVisible = !sidebarVisible;
+    sidebarWidget->setVisible(sidebarVisible);
+}
