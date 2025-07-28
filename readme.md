@@ -4,7 +4,7 @@
 
 <p align="center"> <a href="https://www.w3schools.com/cpp/" target="_blank" rel="noreferrer"> <img src="https://raw.githubusercontent.com/devicons/devicon/master/icons/cplusplus/cplusplus-original.svg" alt="cplusplus" width="40" height="40"/> </a> <a href="https://www.linux.org/" target="_blank" rel="noreferrer"> <img src="https://raw.githubusercontent.com/devicons/devicon/master/icons/linux/linux-original.svg" alt="linux" width="40" height="40"/> </a> <a href="https://www.qt.io/" target="_blank" rel="noreferrer"> <img src="https://upload.wikimedia.org/wikipedia/commons/0/0b/Qt_logo_2016.svg" alt="qt" width="40" height="40"/> </a> </p>
 
-<p align="center">!Bangs - similar to duckduckgo's bangs but implemented into the browser itself simply type !ebay {search} to browse ebay immediately</p>
+<h3 align="center">!Bangs - similar to duckduckgo's bangs but implemented into the browser itself simply type !ebay {search} to browse ebay immediately</h3>
 
     "g",     "https://www.google.com/search?q={search}"
     "ddg",   "https://duckduckgo.com/?q={search}"
