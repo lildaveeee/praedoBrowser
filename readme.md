@@ -1,4 +1,4 @@
-<h3 align="center">A web browser made with Qt in C++. Aimed at being performant, modern and secure.</h3>
+<h1 align="center">A web browser made with Qt in C++. Aimed at being performant, modern and secure.</h1>
 
 <h3 align="center">Tools used:</h3>
 
@@ -29,7 +29,7 @@
     "recipe","https://www.allrecipes.com/search/results/?wt={search}"
     "jobs",  "https://www.indeed.com/jobs?q={search}"
 
-**Installation**
+<h2 align ="center">Installation</h2>
 
 Run installer.sh which will install dependencies and add executable to applications shortcut
 **Run Program**
