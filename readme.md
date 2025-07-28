@@ -11,7 +11,6 @@
     "wiki",  "https://en.wikipedia.org/wiki/Special:Search?search={search}"
     "reddit","https://www.reddit.com/search/?q={search}"
     "yt",    "https://www.youtube.com/results?search_query={search}"
-    "media", "https://hydrahd.sh/index.php?menu=search&query={search}"
     "ebay",  "https://www.ebay.com/sch/i.html?_nkw={search}"
     "steam", "https://store.steampowered.com/search/?term={search}"
     "gh",    "https://github.com/search?q={search}"
